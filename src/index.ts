@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 // Raw body needed for Slack signature verification
 app.use('/slack/events', urlencoded({ extended: true }));
 app.use('/slack/actions', urlencoded({ extended: true }));
+app.use('/slack/commands', urlencoded({ extended: true }));
 app.use(json());
 
 app.use('/slack', slackRouter);

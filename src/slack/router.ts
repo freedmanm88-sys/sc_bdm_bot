@@ -137,7 +137,9 @@ export type SlashBody = {
 };
 
 slackRouter.post('/commands', async (req: Request, res: Response) => {
+  log.info('Slash command raw body', req.body);
   const body = req.body as SlashBody;
+  log.info(`Slash command received: ${body.command}`);
   const handler = SLASH_ROUTES[body.command];
 
   if (!handler) {
