@@ -71,8 +71,8 @@ export async function runWF1(triggeredBy = 'cron'): Promise<{ scanned: number; p
           stats.errors++;
         }
 
-        // Small delay to avoid rate limits
-        await new Promise(r => setTimeout(r, 200));
+        // Delay between articles to avoid Slack rate limits
+        await new Promise(r => setTimeout(r, 1500));
       }
     } catch (err) {
       log.error(`WF1: error fetching feed ${feedUrl}`, err);

@@ -5,24 +5,43 @@ import { BrokerKit } from '../lib/claude';
 
 const BASE = 'https://slack.com/api';
 
-async function slackPost(endpoint: string, body: object): Promise<{ ok: boolean; ts?: string; error?: string }> {
-  const res = await fetch(`${BASE}/${endpoint}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ENV.SLACK_BOT_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json() as { ok: boolean; ts?: string; error?: string };
-  if (!data.ok) log.error(`Slack ${endpoint} failed`, data);
-  return data;
+async function slackPost(endpoint: string, body: object, retries = 2): Promise<{ ok: boolean; ts?: string; error?: string }> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(`${BASE}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ENV.SLACK_BOT_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+
+      // Handle rate limiting
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get('retry-after') || '3');
+        log.warn(`Slack rate limited on ${endpoint}, retrying in ${retryAfter}s (attempt ${attempt + 1})`);
+        await new Promise(r => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      const data = await res.json() as { ok: boolean; ts?: string; error?: string };
+      if (!data.ok) log.error(`Slack ${endpoint} failed`, data);
+      return data;
+    } catch (err) {
+      log.error(`Slack ${endpoint} fetch error (attempt ${attempt + 1})`, { error: (err as Error).message });
+      if (attempt === retries) return { ok: false, error: (err as Error).message };
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return { ok: false, error: 'max retries exceeded' };
 }
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
 
 export async function postMessage(channel: string, blocks: object[], text = ''): Promise<string | null> {
   const data = await slackPost('chat.postMessage', { channel, blocks, text, unfurl_links: false });
+  if (!data.ts) log.warn('postMessage returned no ts', { channel, text: text.slice(0, 80), error: data.error });
   return data.ts || null;
 }
 
