@@ -6,7 +6,13 @@
       "Bash(ngrok http:*)",
       "Bash(winget install:*)",
       "Bash(export PATH=\"$PATH:/c/Users/freed/AppData/Local/ngrok\")",
-      "Bash(curl -s http://127.0.0.1:4040/api/tunnels)"
+      "Bash(curl -s http://127.0.0.1:4040/api/tunnels)",
+      "Bash(gh auth:*)",
+      "Bash(git config:*)",
+      "Bash(railway --version)",
+      "Bash(curl:*)",
+      "Bash(npx supabase:*)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\('ok'\\), d.get\\('ts'\\), d.get\\('error',''\\)\\)\")"
     ]
   }
 }

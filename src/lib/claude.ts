@@ -114,25 +114,29 @@ export async function generateBlog(
     ? voiceFeedback.map(f => `- ${f.note}`).join('\n')
     : 'No feedback yet — use default voice: direct, confident, broker-smart. Short paragraphs. No fluff.';
 
-  const system = `You are a content strategist and writer for Stonefield Capital, a private mortgage lender in Richmond Hill, Ontario.
-Write full blog posts for Ontario mortgage brokers.
+  const system = `You are a sharp, opinionated financial columnist writing for Stonefield Capital, a private mortgage lender in Richmond Hill, Ontario. Your audience: Ontario mortgage brokers who are smart, busy, and allergic to fluff.
+
+Your voice: Think Financial Times opinion column meets mortgage industry insider. You have strong takes. You back them up with data. You make people want to keep reading.
+
+WRITING RULES — follow these exactly:
+- Lead with a bold, provocative claim. The first paragraph should make someone stop scrolling.
+- Short paragraphs only. 2-3 sentences max. White space is your friend.
+- ZERO bullet points anywhere. Not one. Everything is narrative prose.
+- Weave source articles into the flow naturally with inline hyperlinks. Every major claim must trace back to a cited source. Do NOT list sources at the end.
+- Edgy and controversial is fine. Outright false is not.
+- Write like you're explaining this over drinks to a sharp broker friend — direct, confident, a little irreverent.
+- End with a punchy CTA that positions Stonefield Capital as the lender who gets it.
+- 800-1200 words.
 
 Return ONLY valid JSON:
 {
   "title": "<exact title from pitch — do not change>",
   "slug": "<url-friendly slug>",
-  "body_html": "<full HTML article>",
+  "body_html": "<full HTML article — use H1 for title, H2 for sections, <p> for paragraphs, <a> for source links>",
   "meta_description": "<150-160 char meta description>",
   "focus_keyword": "<primary SEO keyword>",
   "geo_signals": {"cities": ["..."], "regions": ["..."], "landmarks": ["..."]}
-}
-
-HTML requirements:
-- H1 for title, H2 for sections
-- 800-1200 words
-- Cite source articles inline with hyperlinks
-- End with a CTA mentioning Stonefield Capital
-- No fluff, no passive voice`;
+}`;
 
   const user = `PITCH:
 Headline: ${pitch.headline}
@@ -199,6 +203,52 @@ VOICE NOTES — broker_template: ${(voiceFeedback.broker_template || []).map(f =
     return JSON.parse(raw.replace(/```json|```/g, '').trim());
   } catch {
     throw new Error(`Failed to parse outputs JSON: ${raw.slice(0, 300)}`);
+  }
+}
+
+// ─── Blog Regeneration (from feedback) ────────────────────────────────────────
+
+// ─── Pitch Refinement ─────────────────────────────────────────────────────────
+
+export async function refinePitch(
+  originalPitch: NarrativePitch,
+  articles: Article[],
+  direction: string,
+  alternativeTitle?: string
+): Promise<{
+  headline: string;
+  summary: string;
+  suggested_blog_title: string;
+}> {
+  const system = `You are a content strategist for Stonefield Capital, Ontario private mortgage lender.
+You are refining an existing narrative pitch based on editorial direction.
+
+Return ONLY valid JSON:
+{
+  "headline": "<compelling 8-12 word headline>",
+  "summary": "<2-3 sentence narrative summary>",
+  "suggested_blog_title": "<SEO blog title>"
+}`;
+
+  const user = `ORIGINAL PITCH:
+Lens: ${originalPitch.lens}
+Headline: ${originalPitch.headline}
+Summary: ${originalPitch.summary}
+Title: ${originalPitch.suggested_blog_title}
+
+SUPPORTING ARTICLES:
+${JSON.stringify(articles.map(a => ({ id: a.id, title: a.title, summary: a.summary })), null, 2)}
+
+EDITORIAL DIRECTION: ${direction}
+${alternativeTitle ? `SUGGESTED TITLE: ${alternativeTitle}` : ''}
+
+Generate a revised pitch that follows the new direction while keeping the same lens and source articles.`;
+
+  const raw = await call(system, user, 1024);
+  try {
+    return JSON.parse(raw.replace(/```json|```/g, '').trim());
+  } catch {
+    throw new Error(`Failed to parse refined pitch JSON: ${raw.slice(0, 300)}`);
   }
 }
 

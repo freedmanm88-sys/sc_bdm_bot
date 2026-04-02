@@ -6,7 +6,8 @@ import { handleTagPool, handleTagSkip } from '../handlers/wf1-tag';
 import { handlePitchApprove, handlePitchReject, handlePitchRejectSubmit, handlePitchHold } from '../handlers/wf2-pitch';
 import { handleBlogApprove, handleBlogFeedback, handleBlogFeedbackSubmit, handleBlogEdit, handleBlogEditSubmit } from '../handlers/wf3a-blog';
 import { handleOutputApprove, handleEditSnippet, handleEditSnippetSubmit, handleEditLinkedin, handleEditBrokerKit } from '../handlers/wf3b-outputs';
-import { handleSlashStatus, handleSlashGenerateBlog, handleSlashViewArticles, handleSlashRunWF1, handleSlashDebug } from '../handlers/slash';
+import { handleSlashStatus, handleSlashGenerateBlog, handleSlashViewArticles, handleSlashRunWF1, handleSlashDebug, handleSlashFindArticles, handleSlashAddSource, handleSlashTweakScore, handleSlashTweakSettings } from '../handlers/slash';
+import { handlePitchRefine, handlePitchRefineSubmit } from '../handlers/wf2-pitch';
 
 export const slackRouter = Router();
 
@@ -40,6 +41,7 @@ const ACTION_ROUTES: Record<string, (payload: SlackPayload, res: Response) => Pr
   scbdm_pitch_approve:         handlePitchApprove,
   scbdm_pitch_reject:          handlePitchReject,
   scbdm_pitch_hold:            handlePitchHold,
+  scbdm_pitch_refine:          handlePitchRefine,
   scbdm_blog_approve:          handleBlogApprove,
   scbdm_blog_feedback:         handleBlogFeedback,
   scbdm_blog_edit:             handleBlogEdit,
@@ -52,6 +54,7 @@ const ACTION_ROUTES: Record<string, (payload: SlackPayload, res: Response) => Pr
 // Modal submission routing
 const MODAL_ROUTES: Record<string, (payload: SlackPayload, res: Response) => Promise<void>> = {
   scbdm_pitch_reject_submit:   handlePitchRejectSubmit,
+  scbdm_pitch_refine_submit:   handlePitchRefineSubmit,
   scbdm_blog_feedback_submit:  handleBlogFeedbackSubmit,
   scbdm_blog_edit_submit:      handleBlogEditSubmit,
   scbdm_edit_snippet_submit:   handleEditSnippetSubmit,
@@ -124,6 +127,10 @@ const SLASH_ROUTES: Record<string, (body: SlashBody, res: Response) => Promise<v
   '/generateblog':     handleSlashGenerateBlog,
   '/viewarticles':     handleSlashViewArticles,
   '/runwf1':           handleSlashRunWF1,
+  '/findarticles':     handleSlashFindArticles,
+  '/addsource':        handleSlashAddSource,
+  '/tweakscore':       handleSlashTweakScore,
+  '/tweaksettings':    handleSlashTweakSettings,
   '/scdebug':          handleSlashDebug,
 };
 

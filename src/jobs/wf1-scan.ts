@@ -1,14 +1,14 @@
 import Parser from 'rss-parser';
 import { scoreArticle } from '../lib/claude';
-import { upsertArticle, updateArticle } from '../lib/supabase';
+import { upsertArticle, updateArticle, getActiveSources, getSetting } from '../lib/supabase';
 import { postMessage, buildArticleCard } from '../slack/blocks';
 import { ENV } from '../lib/env';
 import { log } from '../lib/logger';
 
 const parser = new Parser();
 
-// RSS feeds to scan
-const RSS_FEEDS = [
+// Fallback feeds if sources table is empty
+const DEFAULT_FEEDS = [
   'https://www.ratespy.com/feed',
   'https://www.mortgagebrokernews.ca/rss/news',
   'https://financialpost.com/feed',
@@ -18,13 +18,25 @@ const RSS_FEEDS = [
   'https://storeys.com/feed',
 ];
 
-const MIN_SCORE = 5;
-
 export async function runWF1(triggeredBy = 'cron'): Promise<{ scanned: number; posted: number; errors: number }> {
   log.info(`WF1 starting (triggered by: ${triggeredBy})`);
   const stats = { scanned: 0, posted: 0, errors: 0 };
 
-  for (const feedUrl of RSS_FEEDS) {
+  // Pull feeds from Supabase, fall back to defaults
+  let feedUrls: string[];
+  try {
+    const sources = await getActiveSources();
+    feedUrls = sources.length > 0 ? sources.map(s => s.url) : DEFAULT_FEEDS;
+    log.info(`WF1: using ${feedUrls.length} feeds (${sources.length > 0 ? 'from DB' : 'defaults'})`);
+  } catch {
+    feedUrls = DEFAULT_FEEDS;
+    log.warn('WF1: failed to load sources, using defaults');
+  }
+
+  // Pull configurable MIN_SCORE
+  const minScore = Number(await getSetting('MIN_SCORE')) || 5;
+
+  for (const feedUrl of feedUrls) {
     try {
       const feed = await parser.parseURL(feedUrl);
       log.info(`WF1: fetched ${feed.items.length} items from ${feedUrl}`);
@@ -54,7 +66,7 @@ export async function runWF1(triggeredBy = 'cron'): Promise<{ scanned: number; p
           });
 
           // Only post if score meets threshold AND not already tagged
-          if (relevance_score >= MIN_SCORE && !article.slack_ts) {
+          if (relevance_score >= minScore && !article.slack_ts) {
             const blocks = buildArticleCard(article);
             const ts = await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, item.title);
 

@@ -92,6 +92,20 @@ export type Broker = {
   resend_contact_id: string | null;
 };
 
+export type RssSource = {
+  id: string;
+  url: string;
+  name: string;
+  active: boolean;
+  added_at: string;
+};
+
+export type BotSetting = {
+  key: string;
+  value: string;
+  updated_at: string;
+};
+
 // ─── Query Helpers ─────────────────────────────────────────────────────────────
 
 export async function getArticle(id: string) {
@@ -230,4 +244,40 @@ export async function getActiveBrokers() {
 export async function updateBroker(id: string, updates: Partial<Broker>) {
   const { error } = await supabase.from('brokers').update(updates).eq('id', id);
   if (error) throw error;
+}
+
+// ─── RSS Sources ──────────────────────────────────────────────────────────────
+
+export async function getActiveSources(): Promise<RssSource[]> {
+  const { data, error } = await supabase.from('rss_sources').select('*').eq('active', true);
+  if (error) throw error;
+  return (data || []) as RssSource[];
+}
+
+export async function addSource(url: string, name: string): Promise<RssSource> {
+  const { data, error } = await supabase.from('rss_sources').insert({ url, name }).select().single();
+  if (error) throw error;
+  return data as RssSource;
+}
+
+// ─── Bot Settings ─────────────────────────────────────────────────────────────
+
+export async function getSetting(key: string): Promise<string | null> {
+  const { data, error } = await supabase.from('bot_settings').select('value').eq('key', key).single();
+  if (error) return null;
+  return data?.value || null;
+}
+
+export async function setSetting(key: string, value: string) {
+  const { error } = await supabase.from('bot_settings').upsert(
+    { key, value, updated_at: new Date().toISOString() },
+    { onConflict: 'key' }
+  );
+  if (error) throw error;
+}
+
+export async function getAllSettings(): Promise<BotSetting[]> {
+  const { data, error } = await supabase.from('bot_settings').select('*').order('key');
+  if (error) throw error;
+  return (data || []) as BotSetting[];
 }

@@ -6,7 +6,7 @@ import {
 } from '../lib/supabase';
 import { generateBlog, regenerateBlog } from '../lib/claude';
 import {
-  postMessage, buildBlogReviewCard,
+  postMessage, buildBlogReviewCard, postBlogThread,
   buildBlogFeedbackModal, buildBlogEditModal
 } from '../slack/blocks';
 import { openModal, postSimple, deleteMessage } from '../slack/blocks';
@@ -38,7 +38,12 @@ export async function runWF3a(pitchId: string) {
   });
 
   const blocks = buildBlogReviewCard(post);
-  await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, post.title);
+  const ts = await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, post.title);
+
+  // Post full article in thread
+  if (ts) {
+    await postBlogThread(ENV.CHANNEL_NEWSLETTER, ts, post);
+  }
 
   log.info(`WF3a: blog posted for review — ${post.id}`);
   return post;
@@ -100,7 +105,8 @@ export async function handleBlogFeedbackSubmit(payload: SlackPayload, _res: Resp
 
     const updatedPost = await getBlogPost(meta.blog_post_id);
     const blocks = buildBlogReviewCard(updatedPost);
-    await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, updatedPost.title);
+    const ts = await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, updatedPost.title);
+    if (ts) await postBlogThread(ENV.CHANNEL_NEWSLETTER, ts, updatedPost);
   } catch (err) {
     log.error('handleBlogFeedbackSubmit error', err);
     await postSimple(ENV.CHANNEL_NEWSLETTER, `❌ Regeneration failed: ${(err as Error).message}`);
@@ -131,7 +137,8 @@ export async function handleBlogEditSubmit(payload: SlackPayload, _res: Response
 
     const updatedPost = await getBlogPost(meta.blog_post_id);
     const blocks = buildBlogReviewCard(updatedPost);
-    await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, updatedPost.title);
+    const ts = await postMessage(ENV.CHANNEL_NEWSLETTER, blocks, updatedPost.title);
+    if (ts) await postBlogThread(ENV.CHANNEL_NEWSLETTER, ts, updatedPost);
     await postSimple(ENV.CHANNEL_NEWSLETTER, `✏️ Blog updated and ready for review.`);
   } catch (err) {
     log.error('handleBlogEditSubmit error', err);

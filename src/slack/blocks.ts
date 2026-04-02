@@ -146,6 +146,12 @@ export function buildPitchCard(pitch: NarrativePitch, articleTitles: string[]): 
         },
         {
           type: 'button',
+          text: { type: 'plain_text', text: '🔀 Different Angle' },
+          action_id: 'scbdm_pitch_refine',
+          value: pitch.id,
+        },
+        {
+          type: 'button',
           text: { type: 'plain_text', text: '❌ Not For Us' },
           style: 'danger',
           action_id: 'scbdm_pitch_reject',
@@ -160,7 +166,8 @@ export function buildPitchCard(pitch: NarrativePitch, articleTitles: string[]): 
 // ─── WF3a: Blog Review Card ───────────────────────────────────────────────────
 
 export function buildBlogReviewCard(post: BlogPost): object[] {
-  const preview = post.body_html.replace(/<[^>]+>/g, '').slice(0, 300) + '...';
+  const plainText = post.body_html.replace(/<[^>]+>/g, '');
+  const preview = plainText.slice(0, 200) + (plainText.length > 200 ? '...' : '');
   return [
     {
       type: 'header',
@@ -168,7 +175,7 @@ export function buildBlogReviewCard(post: BlogPost): object[] {
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `*${post.title}*\n\n_${preview}_` },
+      text: { type: 'mrkdwn', text: `*${post.title}*\n\n_${preview}_\n\n_Full article in thread ↓_` },
     },
     {
       type: 'context',
@@ -202,6 +209,41 @@ export function buildBlogReviewCard(post: BlogPost): object[] {
     },
     { type: 'divider' },
   ];
+}
+
+export async function postBlogThread(channel: string, thread_ts: string, post: BlogPost) {
+  const plainText = post.body_html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  const CHUNK_SIZE = 2900;
+
+  if (plainText.length <= CHUNK_SIZE) {
+    await postThread(channel, thread_ts, [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: plainText },
+    }]);
+    return;
+  }
+
+  // Split into chunks at sentence boundaries
+  let remaining = plainText;
+  let part = 1;
+  while (remaining.length > 0) {
+    let chunk: string;
+    if (remaining.length <= CHUNK_SIZE) {
+      chunk = remaining;
+      remaining = '';
+    } else {
+      const cutPoint = remaining.lastIndexOf('. ', CHUNK_SIZE);
+      const splitAt = cutPoint > CHUNK_SIZE * 0.5 ? cutPoint + 2 : CHUNK_SIZE;
+      chunk = remaining.slice(0, splitAt);
+      remaining = remaining.slice(splitAt).trim();
+    }
+    await postThread(channel, thread_ts, [{
+      type: 'section',
+      text: { type: 'mrkdwn', text: `_Part ${part}_\n\n${chunk}` },
+    }]);
+    part++;
+    await new Promise(r => setTimeout(r, 500));
+  }
 }
 
 // ─── WF3b: Output Review Card ─────────────────────────────────────────────────
@@ -293,6 +335,41 @@ export function buildPitchRejectModal(pitch_id: string, slack_ts: string, slack_
           placeholder: { type: 'plain_text', text: 'e.g. Too similar to last week, wrong audience angle...' },
         },
         label: { type: 'plain_text', text: 'Reason' },
+      },
+    ],
+  };
+}
+
+export function buildPitchRefineModal(pitch_id: string, slack_ts: string, slack_channel: string): object {
+  return {
+    type: 'modal',
+    callback_id: 'scbdm_pitch_refine_submit',
+    private_metadata: JSON.stringify({ pitch_id, slack_ts, slack_channel }),
+    title: { type: 'plain_text', text: 'Suggest Different Angle' },
+    submit: { type: 'plain_text', text: 'Regenerate' },
+    close: { type: 'plain_text', text: 'Cancel' },
+    blocks: [
+      {
+        type: 'input',
+        block_id: 'direction_block',
+        element: {
+          type: 'plain_text_input',
+          action_id: 'direction',
+          multiline: true,
+          placeholder: { type: 'plain_text', text: 'e.g. Focus on first-time buyers instead of investors, make it more urgent...' },
+        },
+        label: { type: 'plain_text', text: 'Alternative Direction' },
+      },
+      {
+        type: 'input',
+        block_id: 'alt_title_block',
+        optional: true,
+        element: {
+          type: 'plain_text_input',
+          action_id: 'alt_title',
+          placeholder: { type: 'plain_text', text: 'Leave blank to let Claude suggest one' },
+        },
+        label: { type: 'plain_text', text: 'Alternative Title (optional)' },
       },
     ],
   };

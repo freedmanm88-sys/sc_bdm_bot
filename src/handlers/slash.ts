@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { SlashBody } from '../slack/router';
-import { supabase, getPendingArticles } from '../lib/supabase';
-import { postMessage, buildStatusCard, buildDebugCard } from '../slack/blocks';
+import { supabase, getPendingArticles, getActiveSources, addSource, getSetting, setSetting, getAllSettings, updateArticle, getArticle } from '../lib/supabase';
+import { postMessage, buildStatusCard, buildDebugCard, postSimple } from '../slack/blocks';
 import { ENV } from '../lib/env';
 import { log } from '../lib/logger';
 import { runWF1 } from '../jobs/wf1-scan';
@@ -69,23 +69,29 @@ export async function handleSlashViewArticles(body: SlashBody, res: Response) {
     const articles = await getPendingArticles(14);
 
     if (articles.length === 0) {
-      await postMessage(body.channel_id, [{
-        type: 'section',
-        text: { type: 'mrkdwn', text: '📭 No pending articles in pool.' },
-      }]);
+      await postSimple(body.channel_id, '📭 No pending articles in pool.');
       return;
     }
 
-    const rows = articles.slice(0, 20).map(a =>
-      `• *${a.relevance_score}/10* — <${a.url}|${a.title}> _(${a.source})_\n  ${a.broker_angle}`
-    ).join('\n\n');
+    // Post in batches of 10 to avoid Slack block text limits
+    const batch = articles.slice(0, 20);
+    const header = `*📰 Article Pool (${articles.length} pending)*`;
+    await postSimple(body.channel_id, header);
 
-    await postMessage(body.channel_id, [{
-      type: 'section',
-      text: { type: 'mrkdwn', text: `*📰 Article Pool (${articles.length} pending)*\n\n${rows}` },
-    }]);
+    for (let i = 0; i < batch.length; i += 10) {
+      const chunk = batch.slice(i, i + 10);
+      const rows = chunk.map(a =>
+        `• *${a.relevance_score}/10* — <${a.url}|${a.title}> _(${a.source})_`
+      ).join('\n');
+
+      await postMessage(body.channel_id, [{
+        type: 'section',
+        text: { type: 'mrkdwn', text: rows },
+      }]);
+    }
   } catch (err) {
     log.error('handleSlashViewArticles error', err);
+    await postSimple(body.channel_id, `❌ Error loading articles: ${(err as Error).message}`);
   }
 }
 
@@ -105,6 +111,132 @@ export async function handleSlashRunWF1(body: SlashBody, res: Response) {
   }).catch(err => {
     log.error('handleSlashRunWF1 error', err);
   });
+}
+
+// ─── /findarticles ───────────────────────────────────────────────────────────
+
+export async function handleSlashFindArticles(body: SlashBody, res: Response) {
+  res.json({ response_type: 'ephemeral', text: '🔍 Scanning RSS feeds for new articles...' });
+
+  runWF1('findarticles').then(stats => {
+    postMessage(body.channel_id, [{
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `🔍 *Article scan complete*\nFeeds scanned: ${stats.scanned} articles · New cards posted: ${stats.posted} · Errors: ${stats.errors}`,
+      },
+    }]);
+  }).catch(err => {
+    log.error('handleSlashFindArticles error', err);
+    postSimple(body.channel_id, `❌ Scan failed: ${(err as Error).message}`);
+  });
+}
+
+// ─── /addsource ──────────────────────────────────────────────────────────────
+
+export async function handleSlashAddSource(body: SlashBody, res: Response) {
+  const url = body.text?.trim();
+
+  if (!url) {
+    res.json({ response_type: 'ephemeral', text: 'Usage: `/addsource https://example.com/feed`' });
+    return;
+  }
+
+  res.json({ response_type: 'ephemeral', text: `⏳ Validating feed: ${url}` });
+
+  try {
+    // Validate it's a working RSS feed
+    const Parser = (await import('rss-parser')).default;
+    const parser = new Parser();
+    const feed = await parser.parseURL(url);
+    const name = feed.title || new URL(url).hostname;
+
+    await addSource(url, name);
+    await postSimple(body.channel_id, `✅ *Source added:* ${name}\n\`${url}\`\n${feed.items.length} articles in feed.`);
+  } catch (err) {
+    const msg = (err as Error).message;
+    if (msg.includes('duplicate key') || msg.includes('unique')) {
+      await postSimple(body.channel_id, `⚠️ That feed URL is already in the sources list.`);
+    } else {
+      log.error('handleSlashAddSource error', err);
+      await postSimple(body.channel_id, `❌ Failed to add source: ${msg.slice(0, 200)}`);
+    }
+  }
+}
+
+// ─── /tweakscore ─────────────────────────────────────────────────────────────
+
+export async function handleSlashTweakScore(body: SlashBody, res: Response) {
+  const parts = body.text?.trim().split(/\s+/);
+
+  if (!parts || parts.length < 2) {
+    res.json({ response_type: 'ephemeral', text: 'Usage: `/tweakscore <article_id> <new_score>`\nExample: `/tweakscore abc123 8`' });
+    return;
+  }
+
+  const articleId = parts[0];
+  const newScore = parseInt(parts[1], 10);
+
+  if (isNaN(newScore) || newScore < 1 || newScore > 10) {
+    res.json({ response_type: 'ephemeral', text: '❌ Score must be a number between 1 and 10.' });
+    return;
+  }
+
+  res.json({ response_type: 'ephemeral', text: '⏳ Updating score...' });
+
+  try {
+    const article = await getArticle(articleId);
+    const oldScore = article.relevance_score;
+    await updateArticle(articleId, { relevance_score: newScore });
+    await postSimple(body.channel_id, `✅ *Score updated:* ${article.title}\n${oldScore}/10 → ${newScore}/10`);
+  } catch (err) {
+    log.error('handleSlashTweakScore error', err);
+    await postSimple(body.channel_id, `❌ Failed: ${(err as Error).message}`);
+  }
+}
+
+// ─── /tweaksettings ──────────────────────────────────────────────────────────
+
+export async function handleSlashTweakSettings(body: SlashBody, res: Response) {
+  const parts = body.text?.trim().split(/\s+/);
+
+  // No args = show current settings
+  if (!parts || parts[0] === '') {
+    res.json({ response_type: 'ephemeral', text: '⏳ Loading settings...' });
+    try {
+      const settings = await getAllSettings();
+      const sources = await getActiveSources();
+      const lines = settings.map(s => `\`${s.key}\` = \`${s.value}\``).join('\n');
+      const sourceLines = sources.map(s => `• ${s.name} — \`${s.url}\``).join('\n');
+      await postMessage(body.channel_id, [
+        { type: 'section', text: { type: 'mrkdwn', text: `*⚙️ Bot Settings*\n${lines || '_No settings configured_'}` } },
+        { type: 'section', text: { type: 'mrkdwn', text: `*📡 Active RSS Sources (${sources.length})*\n${sourceLines || '_No sources_'}` } },
+      ], 'Settings');
+    } catch (err) {
+      log.error('handleSlashTweakSettings error', err);
+      await postSimple(body.channel_id, `❌ Error: ${(err as Error).message}`);
+    }
+    return;
+  }
+
+  // Set a value: /tweaksettings MIN_SCORE 7
+  if (parts.length >= 2) {
+    const key = parts[0].toUpperCase();
+    const value = parts[1];
+    res.json({ response_type: 'ephemeral', text: `⏳ Setting ${key}...` });
+
+    try {
+      const old = await getSetting(key);
+      await setSetting(key, value);
+      await postSimple(body.channel_id, `✅ *Setting updated:* \`${key}\` = \`${value}\`${old ? ` (was \`${old}\`)` : ''}`);
+    } catch (err) {
+      log.error('handleSlashTweakSettings set error', err);
+      await postSimple(body.channel_id, `❌ Error: ${(err as Error).message}`);
+    }
+    return;
+  }
+
+  res.json({ response_type: 'ephemeral', text: 'Usage: `/tweaksettings` (show all) or `/tweaksettings MIN_SCORE 7` (set value)' });
 }
 
 // ─── /scdebug ────────────────────────────────────────────────────────────────
