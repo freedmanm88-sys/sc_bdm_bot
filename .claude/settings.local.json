@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(ngrok http:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Users/freed/AppData/Local/ngrok\")",
+      "Bash(curl -s http://127.0.0.1:4040/api/tunnels)"
+    ]
+  }
+}
